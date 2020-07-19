@@ -1,5 +1,11 @@
 from automata.regex_parser import *
 
+def test(x):
+    print('-' * 100)
+    print('Regex:', x)
+    print_tree(parse_regex(x))
+
+
 regexes = (
     'abc',
     'a|b',
@@ -10,8 +16,15 @@ regexes = (
     'a|(ab)*',
     'a|(ab*)*',
     'a|bc*',
-    'a|(bc)d*'
+    'a|(bc)d*',
+    '(a|b)*'
 )
+
+import contextlib
+with open('regexes.txt', 'w') as file:
+    with contextlib.redirect_stdout(file):
+        for r in regexes:
+            test(r)
 
 k = compile_regex('a')
 assert k.run('a'), k.dump()
@@ -56,21 +69,50 @@ assert not k.run('a'), k.dump()
 
 
 regex = '(a|b)*'
-print_tree(parse_regex(regex))
+#print_tree(parse_regex(regex))
 k = compile_regex(regex)
 #k.render()
 
 
-k = compile_regex('(aa)|(ab)')
-l = k.to_deterministic_fsm()
-
 k = compile_regex('a')
-l = k.to_deterministic_fsm()
-
-k = compile_regex('a*')
-l = k.to_deterministic_fsm()
-l.render()
-
+l = k.to_dfsm()
+assert NeFSM.from_dfsm(l).to_regex() == 'a', NeFSM.from_dfsm(l).to_regex()
 
 k = compile_regex('abc')
-k.complement().render()
+l = k.to_dfsm()
+#k.complement().render()
+assert NeFSM.from_dfsm(l).to_regex() == 'abc', NeFSM.from_dfsm(l).to_regex()
+
+k = compile_regex('a|b')
+l = k.to_dfsm()
+assert NeFSM.from_dfsm(l).to_regex() in ('(a)|(b)', '(b)|(a)'), NeFSM.from_dfsm(l).to_regex()
+
+
+k = compile_regex('(aa)|(ab)')
+#print(k.to_regex())
+k = NeFSM.from_dfsm(k.to_dfsm())
+#print(k.to_regex())
+
+
+from automata.regex_parser import _apply_epsilon_fill, _build_tree, _tokenize
+k = compile_regex('a*')
+k = NeFSM.from_dfsm(k.to_dfsm())
+print_tree(parse_regex(k.to_regex()))
+k = compile_regex(k.to_regex())
+#k.render()
+
+
+
+#k.render()
+
+print_tree(parse_regex('a|b*'))
+k = compile_regex('a|b*')
+#k.render()
+
+k = compile_regex('(abc)*').to_normal_form()
+#k.render()
+
+
+k = compile_regex('(a|b)*')
+k.render()
+

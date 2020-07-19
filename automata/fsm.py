@@ -3,6 +3,7 @@
 # Imports
 ##############################################################################
 
+import collections
 import typing
 
 from . import constants
@@ -306,10 +307,12 @@ class DFSM:
             return names[x]
 
         for state in self.states:
-            if state in self.accepting:
+            if state == self.start and state in self.accepting:
+                dot.attr('node', shape='tripleoctagon')
+            elif state in self.accepting:
                 dot.attr('node', shape='doublecircle')
             elif state == self.start:
-                dot.attr('node', shape='diamond')
+                dot.attr('node', shape='octagon')
             dot.node(str(state.uid), name(state.uid))
             dot.attr('node', shape='circle')
 
@@ -366,7 +369,9 @@ class NeFSM(DFSM):
         transitions = {**a.transitions, **b.transitions}
         a_accept = next(iter(a.accepting))
         b_accept = next(iter(b.accepting))
-        transitions[(a_accept, constants.EPSILON)] = {b.start}
+        self._update_state(transitions,
+                           (a_accept, constants.EPSILON),
+                           {b.start})
         return self.__class__(states=a.states | b.states,
                               alphabet=a.alphabet | b.alphabet,
                               transitions=util.freeze_map(transitions),
@@ -382,8 +387,12 @@ class NeFSM(DFSM):
         start = State()
         accept = State()
         transitions[(start, constants.EPSILON)] = {a.start, b.start}
-        transitions[(a_accept, constants.EPSILON)] = {accept}
-        transitions[(b_accept, constants.EPSILON)] = {accept}
+        self._update_state(transitions,
+                           (a_accept, constants.EPSILON),
+                           {accept})
+        self._update_state(transitions,
+                           (b_accept, constants.EPSILON),
+                           {accept})
         return self.__class__(states=a.states | b.states | {start, accept},
                               alphabet=a.alphabet | b.alphabet,
                               transitions=util.freeze_map(transitions),
@@ -391,15 +400,25 @@ class NeFSM(DFSM):
                               accepting={accept})
 
     def __add__(self, other):
+        if not isinstance(other, DFSM):
+            return NotImplemented
+        if not isinstance(other, NeFSM):
+            other = NeFSM.from_dfsm(other)
         return self.concat(other)
 
     def __or__(self, other):
+        if not isinstance(other, DFSM):
+            return NotImplemented
+        if not isinstance(other, NeFSM):
+            other = NeFSM.from_dfsm(other)
         return self.union(other)
 
     def intersection(self, other):
         return ~(~self | ~other)
 
     def __and__(self, other):
+        if not isinstance(other, DFSM):
+            return NotImplemented
         return self.intersection(other)
 
     def kleene_star(self):
@@ -408,16 +427,23 @@ class NeFSM(DFSM):
         accept = next(iter(x.accepting))
         transitions = x.transitions.dictionary.copy()
         transitions[(state, constants.EPSILON)] = {x.start}
-        transitions[(accept, constants.EPSILON)] = {state}
+        self._update_state(transitions, (accept, constants.EPSILON), {state})
         return self.__class__(states=x.states | {state},
                               alphabet=x.alphabet,
                               transitions=util.freeze_map(transitions),
                               initial=state,
                               accepting={state}).to_normal_form()
 
+    @staticmethod
+    def _update_state(transitions, key, targets):
+        try:
+            transitions[key] |= targets
+        except KeyError:
+            transitions[key] = targets
+
     def complement(self):
         # Complement requires a total, deterministic machine
-        return self.to_deterministic_fsm().complement()
+        return self.to_dfsm().complement()
 
     ### misc methods ###
 
@@ -429,10 +455,12 @@ class NeFSM(DFSM):
             transitions[(start, constants.EPSILON)] = {self.start}
         else:
             start = self.start
-        if len(self.accepting) > 1:
+        if not self._accepting_states_in_normal_form():
             accept = State()
             for state in self.accepting:
-                transitions[(state, constants.EPSILON)] = {accept}
+                self._update_state(transitions,
+                                   (state, constants.EPSILON),
+                                   {accept})
         else:
             accept = next(iter(self.accepting))
         return self.__class__(states=self.states | {start, accept},
@@ -441,11 +469,24 @@ class NeFSM(DFSM):
                               initial=start,
                               accepting={accept})
 
-    def to_deterministic_fsm(self):
+    def _accepting_states_in_normal_form(self):
+        if len(self.accepting) != 1:
+            # Need to add a final state if we have none
+            return False
+        accept = next(iter(self.accepting))
+        for symbol in self.alphabet | {constants.EPSILON}:
+            if (accept, symbol) in self.transitions:
+                return False
+        return True
+
+    def to_dfsm(self):
         transitions = {}
         accepting = set()
         initial = State()
-        key = tuple(self._get_epsilon_closure(self.start))
+        closure = self._get_epsilon_closure(self.start)
+        if closure & self.accepting:
+            accepting.add(initial)
+        key = tuple(closure)
         supersets = {
             key: initial
         }
@@ -495,3 +536,34 @@ class NeFSM(DFSM):
                 for new in self.transitions[key]:
                     states |= self._get_epsilon_closure(new)
         return tuple(states)
+
+    def to_regex(self):
+        machine = self.to_normal_form()
+        accept = next(iter(machine.accepting))
+        states = set(machine.states - machine.accepting - {machine.start})
+        pool = set(machine.states)
+        regexes = {}
+        for (old, symbol), news in machine.transitions.items():
+            for new in news:
+                regexes[(old, new)] = symbol
+        while states:
+            q = states.pop()
+            pool.remove(q)
+            for r in pool:
+                if (r, q) not in regexes:
+                    continue
+                for s in pool:
+                    if (q, s) not in regexes:
+                        continue
+                    key = (q, q)
+                    middle = f'{regexes[key]}*' if key in regexes else ''
+                    regex = f'{regexes[(r, q)]}{middle}{regexes[(q, s)]}'
+                    if (r, s) not in regexes:
+                        regexes[(r, s)] = regex
+                    else:
+                        regexes[(r, s)] = f'({regexes[(r, s)]})|({regex})'
+        try:
+            return regexes[(machine.start, accept)]
+        except KeyError as e:
+            # Empty language?
+            return ''
