@@ -1,4 +1,4 @@
-from automata.regex_parser import *
+from automata.fsm.simple_regex_parser import *
 
 def test(x):
     print('-' * 100)
@@ -62,7 +62,7 @@ assert not k.run('bb'), k.dump()
 # Test loop detection
 
 from automata.state import State
-from automata.fsm import NeFSM
+from automata.fsm.fsm import NeFSM
 s = State()
 k = NeFSM(states={s}, alphabet={'a'}, transitions={(s, ''): {s}}, initial=s, accepting={})
 assert not k.run('a'), k.dump()
@@ -94,10 +94,9 @@ k = NeFSM.from_dfsm(k.to_dfsm())
 #print(k.to_regex())
 
 
-from automata.regex_parser import _apply_epsilon_fill, _build_tree, _tokenize
 k = compile_regex('a*')
 k = NeFSM.from_dfsm(k.to_dfsm())
-print_tree(parse_regex(k.to_regex()))
+#print_tree(parse_regex(k.to_regex()))
 k = compile_regex(k.to_regex())
 #k.render()
 
@@ -105,7 +104,7 @@ k = compile_regex(k.to_regex())
 
 #k.render()
 
-print_tree(parse_regex('a|b*'))
+#print_tree(parse_regex('a|b*'))
 k = compile_regex('a|b*')
 #k.render()
 
@@ -114,5 +113,31 @@ k = compile_regex('(abc)*').to_normal_form()
 
 
 k = compile_regex('(a|b)*')
-k.render()
+#k.render()
 
+k = compile_regex('a*')
+
+from automata.pdm.cfg import *
+
+
+k = (CFGBuilder()
+     .add_rules('S', 'AS', 'BS', '')
+     .add_rules('A', 'aA', '')
+     .add_rules('B', 'bB', '')
+     .finalize(start='S'))
+
+l = k.derive('abba')
+
+
+def print_tree(tree, indent=0):
+   from automata.pdm.cfg import Node, Leaf
+   if isinstance(tree, Leaf):
+       print(' '*indent, tree.symbol)
+   else:
+       print(' ' * indent, tree.name)
+       assert isinstance(tree, Node)
+       for child in tree.children:
+            print_tree(child, indent+1)
+
+
+print_tree(l)

@@ -2,7 +2,7 @@ import abc
 import enum
 import warnings
 
-from .fsm import NeFSM
+from automata.fsm.fsm import NeFSM
 
 ##############################################################################
 ##############################################################################
@@ -97,15 +97,17 @@ def print_tree(tree, indent=0, indent_symbol=' '):
 ##############################################################################
 
 
-def parse_regex(pattern):
+def parse_regex(pattern, alphabet=None):
     """Parse a regex into a parse tree."""
-    tokens = _tokenize(iter(pattern))
+    alphabet = alphabet if alphabet is not None else frozenset()
+    tokens = _tokenize(iter(pattern), alphabet)
     tokens = _apply_epsilon_fill(tokens)
     _recursive_to_postfix(tokens)
     return _build_tree(tokens)
 
 
 class TokenType(enum.Enum):
+    # Basic regex tokens
     UNION = enum.auto()
     STAR = enum.auto()
     GROUP = enum.auto()
@@ -122,7 +124,7 @@ class Token:
         return f'{self.__class__.__qualname__}({self.type}, {self.payload})'
 
 
-def _tokenize(stream, recursive=False):
+def _tokenize(stream, alphabet, recursive=False):
     tokens = []
     while True:
         try:
@@ -134,7 +136,9 @@ def _tokenize(stream, recursive=False):
         if _is_star(c):
             tokens.append(Token(TokenType.STAR))
         elif _is_open(c):
-            tok = Token(TokenType.GROUP, _tokenize(stream, recursive=True))
+            tok = Token(TokenType.GROUP, _tokenize(stream,
+                                                   alphabet,
+                                                   recursive=True))
             tokens.append(tok)
         elif _is_close(c):
             if not recursive:
@@ -259,5 +263,25 @@ def _is_close(char):
     return char == ')'
 
 
+def _is_set_open(char):
+    return char == '['
+
+
+def _is_set_close(char):
+    return char == ']'
+
+
+def _is_counter_open(char):
+    return char == '{'
+
+
+def _is_counter_close(char):
+    return char == '}'
+
+
 def _is_escape(char):
     return char == '\\'
+
+
+def _is_hat(char):
+    return char == '^'

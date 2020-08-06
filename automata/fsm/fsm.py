@@ -3,15 +3,15 @@
 # Imports
 ##############################################################################
 
-import collections
 import typing
 
-from . import constants
-from .runners import Runner, RunnerState
-from .state import State
+from automata import constants
+from automata.match import SimpleMatch
+from automata.runners import Runner, RunnerState
+from automata.state import State
 
-from .util import FrozenDict
-from . import util
+from automata.util import FrozenDict
+from automata import util
 
 ##############################################################################
 ##############################################################################
@@ -26,16 +26,23 @@ class _FSMConfig(typing.NamedTuple):
 
 class _DFSMRunner(Runner):
 
+    def check_accept_sliding(self, config) -> RunnerState:
+        if config.state in self.accepting_states:
+            return RunnerState.ACCEPT
+        return RunnerState.CONTINUE
+
+    def make_match(self, word, config) -> SimpleMatch:
+        stop = len(word) - len(config.string)
+        return SimpleMatch(0, stop, word[:stop])
+
     def get_initial_config(self, word):
         return _FSMConfig(word, self.initial_state)
 
-    def get_key(self, configuration):
+    def get_keys(self, configuration):
         if configuration.string:
-            return configuration.state, configuration.string[0]
-        return configuration.state, constants.EPSILON
-
-    def get_nondeterministic_key(self, configuration):
-        return
+            yield configuration.state, configuration.string[0]
+        else:
+            yield configuration.state, constants.EPSILON
 
     def get_next_config(self, config, key, new_state):
         return _FSMConfig(config.string[1:], new_state)
@@ -48,8 +55,9 @@ class _DFSMRunner(Runner):
 
 class _NeFSMRunner(_DFSMRunner):
 
-    def get_nondeterministic_key(self, configuration):
-        return configuration.state, constants.EPSILON
+    def get_keys(self, configuration):
+        yield from super().get_keys(configuration)
+        yield configuration.state, constants.EPSILON
 
     def get_next_config(self, config, key, new_state):
         if key[1] == constants.EPSILON:
@@ -110,7 +118,6 @@ class DFSM:
         return self.__accepting
 
     ### Running interface ###
-
 
     def run(self, word):
         return self.runner.run_with(word) == RunnerState.ACCEPT
@@ -290,38 +297,29 @@ class DFSM:
                 print(f'{names[old]} --> {names[new]}: {symbol!r}')
 
     def render(self):
-        from graphviz import Digraph
-        import string
-        import random
-        dot = Digraph()
-        dot.attr('node', shape='circle')
+        from .. import debug
 
-        names = {}
+        class FSMFormatter(debug.Formatter):
 
-        def name(x):
-            if x not in names:
-                y = random.choice(string.ascii_uppercase)
-                while y in names.values():
-                    y += random.choice(string.ascii_uppercase)
-                names[x] = y
-            return names[x]
+            @staticmethod
+            def get_source_uid(key):
+                old, _ = key
+                return str(old.uid)
 
-        for state in self.states:
-            if state == self.start and state in self.accepting:
-                dot.attr('node', shape='tripleoctagon')
-            elif state in self.accepting:
-                dot.attr('node', shape='doublecircle')
-            elif state == self.start:
-                dot.attr('node', shape='octagon')
-            dot.node(str(state.uid), name(state.uid))
-            dot.attr('node', shape='circle')
+            @staticmethod
+            def get_target_uid(value):
+                return str(value.uid)
 
-        for (old, symbol), news in self.transitions.items():
-            for new in news:
-                dot.edge(str(old.uid), str(new.uid), label=symbol)
+            @staticmethod
+            def get_label(key, value):
+                _, symbol = key
+                return symbol
 
-        print(dot.source)
-        dot.render('fsm.gv', view=True)
+        debug.render(states=self.states,
+                     transitions=self.transitions,
+                     start=self.start,
+                     accepting=self.accepting,
+                     formatter=FSMFormatter)
 
 
 ##############################################################################

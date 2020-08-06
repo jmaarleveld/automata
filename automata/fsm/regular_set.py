@@ -4,8 +4,8 @@ import math
 import operator
 import warnings
 
-from .regex_parser import *
-from . import fsm
+from .simple_regex_parser import *
+from automata import fsm
 
 
 class RegularSet(collections.abc.Set):
